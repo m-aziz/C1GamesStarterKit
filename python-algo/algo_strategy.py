@@ -4,6 +4,7 @@ import math
 import warnings
 from sys import maxsize
 import json
+import os
 
 
 """
@@ -25,6 +26,9 @@ class AlgoStrategy(gamelib.AlgoCore):
         seed = random.randrange(maxsize)
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
+        self.turretLoc = [[3, 12], [24, 12], [7, 10], [11, 10], [16, 10], [20, 10]]
+        self.wallLoc = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [11, 11], [16, 11]]
+        self.supLoc = [[11, 9], [16, 9]]
 
     def on_game_start(self, config):
         """ 
@@ -53,9 +57,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         game engine.
         """
         game_state = gamelib.GameState(self.config, turn_state)
+        game_state.attempt_spawn(DEMOLISHER, [24, 10], 3)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
+        gamelib.debug_write(game_state.turn_number)
         self.starter_strategy(game_state)
 
         game_state.submit_turn()
@@ -75,8 +81,6 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         # First, place basic defenses
         self.build_defences(game_state)
-        # Now build reactive defenses based on where the enemy scored
-        self.build_reactive_defense(game_state)
 
         # If the turn is less than 5, stall with interceptors and wait to see enemy's base
         if game_state.turn_number < 5:
@@ -109,27 +113,73 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
-        # Place turrets that attack enemy units
-        turret_locations = [[0, 13], [27, 13], [8, 11], [19, 11], [13, 11], [14, 11]]
-        # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
-        
-        # Place walls in front of turrets to soak up damage for them
-        wall_locations = [[8, 12], [19, 12]]
-        game_state.attempt_spawn(WALL, wall_locations)
-        # upgrade walls so they soak more damage
-        game_state.attempt_upgrade(wall_locations)
+        # Starting Structure Locations
+        game_state.attempt_spawn(WALL, self.wallLoc)
+        game_state.attempt_spawn(TURRET, self.turretLoc)
+        game_state.attempt_spawn(SUPPORT, self.supLoc)
+        self.rebuildDef(game_state)
+        self.buildNewDef(game_state)
 
-    def build_reactive_defense(self, game_state):
+    def rebuildDef(self, game_state):
         """
         This function builds reactive defenses based on where the enemy scored on us from.
         We can track where the opponent scored by looking at events in action frames 
         as shown in the on_action_frame function
         """
-        for location in self.scored_on_locations:
-            # Build turret one space above so that it doesn't block our own edge spawn locations
-            build_location = [location[0], location[1]+1]
-            game_state.attempt_spawn(TURRET, build_location)
+        turrets = []
+        upgradeTur = []
+        for x,y in self.turretLoc:
+            if len(game_state.game_map[x, y]) == 1:
+                turret = game_state.game_map[x, y][0] 
+                if not(turret.upgraded) and (turret.health < turret.max_health) and turret.health >= 20:
+                    upgradeTur.append(turret)
+                elif not(turret.upgraded) and (turret.health < 20):
+                    turrets.append(turret)
+            else:
+                game_state.attempt_spawn(TURRET, [[x, y]])
+        turrets.sort(key=lambda x: x.health)
+        upgradeTur.sort(key=lambda x: x.health)
+
+        walls = []
+        upgradeWall = []
+        for x,y in self.wallLoc:
+            if len(game_state.game_map[x, y]) == 1:
+                wall = game_state.game_map[x, y][0]
+                if not(wall.upgraded) and (wall.health < wall.max_health) and wall.health >= 60:
+                    upgradeWall.append(wall)
+                elif not(wall.upgraded) and (wall.health < 60):
+                    walls.append(wall)
+            else:
+                spawn = [[x, y]]
+                game_state.attempt_spawn(WALL, [[x, y]])
+        walls.sort(key=lambda x: x.health)
+        upgradeWall.sort(key=lambda x: x.health)
+        
+        remove = []
+        curSP = game_state._player_resources[0]['SP']
+        for turret in turrets:
+            refund = 97 * 2 * (turret.health / turret.max_health)
+            if (curSP + refund >= 2):
+                curSP += refund
+                remove.append([turret.x, turret.y])
+
+        for wall in walls:
+            refund = 97 * 2 * (wall.health / wall.max_health)
+            if (curSP + refund >= 2):
+                curSP += refund
+                remove.append([wall.x, wall.y])
+
+        if len(remove) > 0:
+            game_state.attempt_remove(remove)
+
+        for wall in upgradeWall:
+            game_state.attempt_upgrade([[wall.x, wall.y]])
+        for turret in upgradeTur:
+            game_state.attempt_upgrade([[turret.x, turret.y]])
+
+    def buildNewDef(self, game_state):
+        gamelib.debug_write('LOCATIONS')
+        gamelib.debug_write(self.scored_on_locations)
 
     def stall_with_interceptors(self, game_state):
         """
