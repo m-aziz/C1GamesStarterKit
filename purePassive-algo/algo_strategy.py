@@ -95,7 +95,8 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         # If the turn is less than 5, stall with interceptors and wait to see enemy's base
         if game_state.turn_number < 5:
-            self.stall_with_interceptors(game_state)
+            self.stall_with_scouts(game_state)
+            # self.stall_with_interceptors(game_state)
         else:
             # Now let's analyze the enemy base to see where their defenses are concentrated.
             # If they have many units in the front we can build a line for our demolishers to attack them at long range.
@@ -125,15 +126,17 @@ class AlgoStrategy(gamelib.AlgoCore):
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
         # Place turrets that attack enemy units
-        turret_locations = [[0, 13], [27, 13], [8, 11], [19, 11], [13, 11], [14, 11]]
+        turret_locations = [[2, 12], [25,12], [4,11], [10,11], [16, 11], [23,11]]
         # attempt_spawn will try to spawn units if we have resources, and will check if a blocking unit is already there
-        game_state.attempt_spawn(TURRET, turret_locations)
+        turret_cost = game_state.attempt_spawn(TURRET, turret_locations)*2
         
         # Place walls in front of turrets to soak up damage for them
-        wall_locations = [[8, 12], [19, 12]]
-        game_state.attempt_spawn(WALL, wall_locations)
+        wall_locations = [[2, 13], [25, 13],[1, 13], [3,11], [5,11], [7, 11], [9,11], [11,11], [13, 11], [15, 11], [17, 11]
+        ,[19,11], [21,11], [24, 12], [26,13]]
+        wall_cost = game_state.attempt_spawn(WALL, wall_locations)*1
         # upgrade walls so they soak more damage
-        game_state.attempt_upgrade(wall_locations)
+        game_state.attempt_upgrade([[2, 13], [25, 13]])
+        game_state.attempt_upgrade(turret_locations)
 
     def build_reactive_defense(self, game_state):
         """
@@ -168,6 +171,21 @@ class AlgoStrategy(gamelib.AlgoCore):
             We don't have to remove the location since multiple mobile 
             units can occupy the same space.
             """
+
+    def stall_with_scouts(self, game_state):
+        """
+        Send out interceptors at random locations to defend our base from enemy moving units.
+        """
+        # We can spawn moving units on our edges so a list of all our edge locations
+        friendly_edges = game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_LEFT) + game_state.game_map.get_edge_locations(game_state.game_map.BOTTOM_RIGHT)
+        # Remove locations that are blocked by our own structures 
+        # since we can't deploy units there.
+        deploy_locations = self.filter_blocked_locations(friendly_edges, game_state)
+        best_location = self.least_damage_spawn_location(game_state, deploy_locations)
+        while game_state.get_resource(MP) >= game_state.type_cost(SCOUT)[MP]:
+            game_state.attempt_spawn(SCOUT, best_location)
+        
+
 
     def demolisher_line_strategy(self, game_state):
         """
