@@ -26,9 +26,14 @@ class AlgoStrategy(gamelib.AlgoCore):
         seed = random.randrange(maxsize)
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
-        self.turretLoc = [[3, 12], [24, 12], [7, 10], [11, 10], [16, 10], [20, 10]]
-        self.wallLoc = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [11, 11], [16, 11]]
-        self.supLoc = [[11, 9], [16, 9]]
+        self.turretStart = [[3, 12], [24, 12], [7, 10], [11, 10], [16, 10], [20, 10]]
+        self.wallStart = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [11, 11], [16, 11]]
+        self.supStart = [[11, 9], [16, 9]]
+
+        self.turretCur = []
+        self.wallCur = []
+        self.supCur = []
+
         self.turretEnd = [
             [1, 12], [2, 12], [3, 12], [24, 12], [25, 12], [26, 12],
             [2, 11], [3, 11], [4, 11], [23, 11], [24, 11], [25, 11],
@@ -53,7 +58,11 @@ class AlgoStrategy(gamelib.AlgoCore):
             [15, 8], [16, 8], [17, 8], [18, 8], [19, 8], [20, 8], [21, 8], [22, 8],
             [7, 6], [8, 6], [9, 6], [10, 6], [11, 6], [12, 6], [13, 6], [14, 6], [15, 6], [16, 6], [17, 6], [18, 6], [19, 6], [20, 6]
         ]
-        self.attackLoc = {}
+
+        self.turretDeath = []
+        self.wallDeath = []
+
+        self.attackingUnitLoc = {}
 
     def on_game_start(self, config):
         """ 
@@ -71,8 +80,7 @@ class AlgoStrategy(gamelib.AlgoCore):
         MP = 1
         SP = 0
         # This is a good place to do initial setup
-        self.scored_on_locations = []
-
+        
     def on_turn(self, turn_state):
         """
         This function is called every turn with the game state wrapper as
@@ -90,13 +98,13 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         game_state.submit_turn()
 
-        self.attackLoc = {}
-
-
     """
     NOTE: All the methods after this point are part of the sample starter-algo
     strategy and can safely be replaced for your custom algo.
     """
+
+    # def calcIdle(self):
+        
 
     def starter_strategy(self, game_state):
         """
@@ -130,162 +138,27 @@ class AlgoStrategy(gamelib.AlgoCore):
         """
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
-
-        game_state.attempt_spawn(WALL, self.wallLoc)
-        game_state.attempt_spawn(TURRET, self.turretLoc)
-        game_state.attempt_spawn(SUPPORT, self.supLoc)
+        if game_state.turn_number == 1:
+            game_state.attempt_spawn(WALL, self.wallStart)
+            game_state.attempt_spawn(TURRET, self.turretStart)
+            game_state.attempt_spawn(SUPPORT, self.supStart)
         self.rebuildDef(game_state)
-        self.buildNewDef(game_state)
 
     def rebuildDef(self, game_state):
-        """
-        This function builds reactive defenses based on where the enemy scored on us from.
-        We can track where the opponent scored by looking at events in action frames 
-        as shown in the on_action_frame function
-        """
+        for x,y in self.turretDeath:
+            key = str(x) + ',' + str(y)
+            attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+            closest = self.findClosest(game_state, attackLoc, 5)
+
+    def findClosest(self, game_state, loc, radius):
         turrets = []
-        upgradeTur = []
-        for x,y in self.turretLoc:
-            if len(game_state.game_map[x, y]) == 1:
-                turret = game_state.game_map[x, y][0]
-                if self.canBeDestroyed(game_state, turret):
-                    if not(turret.upgraded) and self.shouldUpgradeInstead(game_state, turret):
-                        upgradeTur.append(turret)
-                    else:
-                        turrets.append(turret)
-            else:
-                game_state.attempt_spawn(TURRET, [[x, y]])
-        turrets.sort(key=lambda x: x.health)
-        upgradeTur.sort(key=lambda x: x.health)
-
         walls = []
-        upgradeWall = []
-        for x,y in self.wallLoc:
-            if len(game_state.game_map[x, y]) == 1:
-                wall = game_state.game_map[x, y][0]
-                if self.canBeDestroyed(game_state, wall):
-                    if not(wall.upgraded) and self.shouldUpgradeInstead(game_state, wall):
-                        upgradeWall.append(wall)
-                    else:
-                        walls.append(wall)
-            else:
-                spawn = [[x, y]]
-                game_state.attempt_spawn(WALL, [[x, y]])
-        walls.sort(key=lambda x: x.health)
-        upgradeWall.sort(key=lambda x: x.health)
-        
-        remove = []
-        for turret in turrets:
-            if turret.health <= 40:
-                remove.append([turret.x, turret.y])
 
-        for wall in walls:
-            if wall.health <= 40:
-                remove.append([wall.x, wall.y])
+        for 
 
-        if len(remove) > 0:
-            game_state.attempt_remove(remove)
 
-        for wall in upgradeWall:
-            game_state.attempt_upgrade([[wall.x, wall.y]])
-        for turret in upgradeTur:
-            game_state.attempt_upgrade([[turret.x, turret.y]])
 
-    def canBeDestroyed(self, game_state, struc):
-        opMP = game_state._player_resources[1]['MP'] + 4
-        demolisher = math.floor(opMP/3)
-        scout = opMP % 3
-        totalAttack = (demolisher * 8 * 18) + (scout * 2 * 7)
-        if struc.health < totalAttack:
-            return True
-        return False
 
-    def shouldUpgradeInstead(self, game_state, struc):
-        addHealth = 40 if struc.unit_type == 'DF' else 140
-        opMP = game_state._player_resources[1]['MP'] + 4
-        demolisher = math.floor(opMP/3)
-        scout = opMP % 3
-        totalAttack = (demolisher * 8 * 18) + (scout * 2 * 7)
-        if struc.health + addHealth < totalAttack:
-            return False
-        return True
-
-    def buildNewDef(self, game_state):
-        top5 = []
-        count = 0;
-        while self.attackLoc and count < 5:
-            maxAttack = max(self.attackLoc, key=lambda key:self.attackLoc[key])
-            del self.attackLoc[maxAttack]
-            loc = maxAttack.split(',')
-            loc[0] = int(loc[0])
-            loc[1] = int(loc[1])
-            top5.append(self.getClosest(game_state, loc))
-            count += 1
-
-        curSP = game_state._player_resources[0]['SP']
-        index = [[0] * 2] * len(top5)
-        topIndex = 0
-        while curSP >= 1 and len(top5) != 0:
-            curTurret = top5[topIndex][0][index[topIndex][0]][:2]
-            curWall = top5[topIndex][1][index[topIndex][1]][:2]
-            if game_state.attempt_spawn(TURRET, [curTurret]) == 1:
-                gamelib.debug_write("SPAWNED")
-                self.turretLoc.append(curTurret)
-                curSP -= 2
-            elif game_state.attempt_upgrade([curTurret]) == 1:
-                curSP -= 4
-            if game_state.attempt_spawn(WALL, [curWall]) == 1:
-                self.wallLoc.append(curWall)
-                curSP -= 1
-            elif game_state.attempt_upgrade([curWall]) == 1:
-                curSP -= 2
-            if index[topIndex][0] + 1 == len(top5[topIndex][0]) or index[topIndex][1] + 1 == len(top5[topIndex][1]):
-                break
-            index[topIndex][0] += 1
-            index[topIndex][1] += 1 
-            topIndex = topIndex + 1 if topIndex < len(top5) - 1 else 0
-
-    def getClosest(self, game_state, loc):
-        turrets = self.turretEnd.copy()
-        walls = self.wallEnd.copy()
-
-        for i in range(1, len(self.turretEnd)):
-            if len(turrets[i]) < 3:
-                dist = self.calcDist(loc, turrets[i])
-                turrets[i].append(dist)
-            key = turrets[i]    
-            j = i-1
-            while j >= 0:
-                if len(turrets[j]) < 3:
-                    dist = self.calcDist(loc, turrets[j])
-                    turrets[j].append(dist)
-                if key[2] > turrets[j][2]:
-                    break
-                turrets[j+1] = turrets[j]
-                j -= 1
-            turrets[j+1] = key
-
-        for i in range(1, len(self.wallEnd)):
-            if len(walls[i]) < 3:
-                dist = self.calcDist(loc, walls[i])
-                walls[i].append(dist)
-            key = walls[i]    
-            j = i-1
-            while j >= 0:
-                if len(walls[j]) < 3:
-                    dist = self.calcDist(loc, walls[j])
-                    walls[j].append(dist)
-                if key[2] > walls[j][2]:
-                    break
-                walls[j+1] = walls[j]
-                j -= 1
-            walls[j+1] = key
-        
-        return [turrets, walls]
-
-            
-    def calcDist(self, loc1, loc2):
-        return math.sqrt( ((loc1[0]-loc2[0])**2)+((loc1[1]-loc2[1])**2) )
 
     def stall_with_interceptors(self, game_state):
         """
@@ -377,25 +250,25 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Let's record at what position we get scored on
         state = json.loads(turn_string)
         events = state["events"]
-        breaches = events["breach"]
-        damages = events["damage"]
+        deaths = events["death"]
+        attacks = events["attack"]
 
-        for damage in damages:
-            if damage[4] == 1:
-                if (damage[2] == 0) or (damage[2] == 2):
-                    key = str(damage[0][0]) + ',' + str(damage[0][1])
-                    if key in self.attackLoc:
-                        self.attackLoc[key] += 1
-                    else:
-                        self.attackLoc[key] = 1
+        for attack in attacks:
+            if attack[6] == 2:
+                key = str(attack[1][0]) + ',' + str(attack[1][1])
+                if key in self.attackingUnitLoc:
+                    self.attackingUnitLoc[key].append(attack[0])
+                else:
+                    self.attackingUnitLoc[key] = [attack[0]]
 
-        for breach in breaches:
-            location = breach[0]
-            unit_owner_self = True if breach[4] == 1 else False
-            # When parsing the frame data directly, 
-            # 1 is integer for yourself, 2 is opponent (StarterKit code uses 0, 1 as player_index instead)
-            if not unit_owner_self:
-                self.scored_on_locations.append(location)
+        for death in deaths:
+            if death[3] == 1 and not(death[4]):
+                if death[1] == 0:
+                    self.wallDeath.append(death[0])
+                if death[1] == 2:
+                    self.turretDeath.append(death[0])
+
+
 
 
 if __name__ == "__main__":
