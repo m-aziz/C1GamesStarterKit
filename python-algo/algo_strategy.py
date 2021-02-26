@@ -29,6 +29,31 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.turretLoc = [[3, 12], [24, 12], [7, 10], [11, 10], [16, 10], [20, 10]]
         self.wallLoc = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [11, 11], [16, 11]]
         self.supLoc = [[11, 9], [16, 9]]
+        self.turretEnd = [
+            [1, 12], [2, 12], [3, 12], [24, 12], [25, 12], [26, 12],
+            [2, 11], [3, 11], [4, 11], [23, 11], [24, 11], [25, 11],
+            [3, 10], [4, 10], [5, 10], [6, 10], [7, 10], [8, 10], [9, 10], [10, 10], [11, 10],
+            [16, 10], [17, 10], [18, 10], [19, 10], [20, 10], [21, 10], [22, 10], [23, 10], [24, 10],
+            [4, 9], [5, 9], [6, 9], [7, 9], [8, 9], [9, 9], [10, 9],
+            [17, 9], [18, 9], [19, 9], [20, 9], [21, 9], [22, 9], [23, 9],
+            [8, 5], [9, 5], [10, 5], [11, 5], [12, 5], [13, 5], [14, 5], [15, 5], [16, 5], [17, 5], [18, 5], [19, 5],
+            [9, 4], [10, 4], [11, 4], [12, 4], [13, 4], [14, 4], [15, 4], [16, 4], [17, 4], [18, 4],
+            [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], [15, 3], [16, 3], [17, 3]
+
+        ]
+        self.wallEnd = [
+            [0, 13], [1, 13], [2, 13], [3, 13], [4, 13], [5, 13], [6, 13], [7, 13], [8, 13], [9, 13], [10, 13], [11, 13], [12, 13],
+            [15, 13], [16, 13], [17, 13], [18, 13], [19, 13], [20, 13], [21, 13], [22, 13], [23, 13], [24, 13], [25, 13], [26, 13], [27, 13],
+            [4, 12], [5, 12], [6, 12], [7, 12], [8, 12], [9, 12], [10, 12], [11, 12], [12, 12],
+            [15, 12], [16, 12], [17, 12], [18, 12], [19, 12], [20, 12], [21, 12], [22, 12], [23, 12],
+            [5, 11], [6, 11], [7, 11], [8, 11], [9, 11], [10, 11], [11, 11], [12, 11],
+            [15, 11], [16, 11], [17, 11], [18, 11], [19, 11], [20, 11], [21, 11], [22, 11],
+            [12, 10], [12, 9], [15, 10], [15, 9],
+            [5, 8], [6, 8], [7, 8], [8, 8], [9, 8], [10, 8], [11, 8], [12, 8],
+            [15, 8], [16, 8], [17, 8], [18, 8], [19, 8], [20, 8], [21, 8], [22, 8],
+            [7, 6], [8, 6], [9, 6], [10, 6], [11, 6], [12, 6], [13, 6], [14, 6], [15, 6], [16, 6], [17, 6], [18, 6], [19, 6], [20, 6]
+        ]
+        self.attackLoc = {}
 
     def on_game_start(self, config):
         """ 
@@ -57,14 +82,15 @@ class AlgoStrategy(gamelib.AlgoCore):
         game engine.
         """
         game_state = gamelib.GameState(self.config, turn_state)
-        game_state.attempt_spawn(DEMOLISHER, [24, 10], 3)
+        game_state.attempt_spawn(DEMOLISHER, [21, 7], 3)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
 
-        gamelib.debug_write(game_state.turn_number)
         self.starter_strategy(game_state)
 
         game_state.submit_turn()
+
+        self.attackLoc = {}
 
 
     """
@@ -88,22 +114,14 @@ class AlgoStrategy(gamelib.AlgoCore):
         else:
             # Now let's analyze the enemy base to see where their defenses are concentrated.
             # If they have many units in the front we can build a line for our demolishers to attack them at long range.
-            if self.detect_enemy_unit(game_state, unit_type=None, valid_x=None, valid_y=[14, 15]) > 10:
-                self.demolisher_line_strategy(game_state)
-            else:
-                # They don't have many units in the front so lets figure out their least defended area and send Scouts there.
 
-                # Only spawn Scouts every other turn
-                # Sending more at once is better since attacks can only hit a single scout at a time
-                if game_state.turn_number % 2 == 1:
-                    # To simplify we will just check sending them from back left and right
-                    scout_spawn_location_options = [[13, 0], [14, 0]]
-                    best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
-                    game_state.attempt_spawn(SCOUT, best_location, 1000)
-
-                # Lastly, if we have spare SP, let's build some Factories to generate more resources
-                support_locations = [[13, 2], [14, 2], [13, 3], [14, 3]]
-                game_state.attempt_spawn(SUPPORT, support_locations)
+            # Only spawn Scouts every other turn
+            # Sending more at once is better since attacks can only hit a single scout at a time
+            if game_state.turn_number % 2 == 1:
+                # To simplify we will just check sending them from back left and right
+                scout_spawn_location_options = [[6, 7], [21, 7]]
+                best_location = self.least_damage_spawn_location(game_state, scout_spawn_location_options)
+                game_state.attempt_spawn(SCOUT, best_location, 1000)
 
     def build_defences(self, game_state):
         """
@@ -113,7 +131,6 @@ class AlgoStrategy(gamelib.AlgoCore):
         # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
         # More community tools available at: https://terminal.c1games.com/rules#Download
 
-        # Starting Structure Locations
         game_state.attempt_spawn(WALL, self.wallLoc)
         game_state.attempt_spawn(TURRET, self.turretLoc)
         game_state.attempt_spawn(SUPPORT, self.supLoc)
@@ -130,11 +147,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         upgradeTur = []
         for x,y in self.turretLoc:
             if len(game_state.game_map[x, y]) == 1:
-                turret = game_state.game_map[x, y][0] 
-                if not(turret.upgraded) and (turret.health < turret.max_health) and turret.health >= 20:
-                    upgradeTur.append(turret)
-                elif not(turret.upgraded) and (turret.health < 20):
-                    turrets.append(turret)
+                turret = game_state.game_map[x, y][0]
+                if self.canBeDestroyed(game_state, turret):
+                    if not(turret.upgraded) and self.shouldUpgradeInstead(game_state, turret):
+                        upgradeTur.append(turret)
+                    else:
+                        turrets.append(turret)
             else:
                 game_state.attempt_spawn(TURRET, [[x, y]])
         turrets.sort(key=lambda x: x.health)
@@ -145,10 +163,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         for x,y in self.wallLoc:
             if len(game_state.game_map[x, y]) == 1:
                 wall = game_state.game_map[x, y][0]
-                if not(wall.upgraded) and (wall.health < wall.max_health) and wall.health >= 60:
-                    upgradeWall.append(wall)
-                elif not(wall.upgraded) and (wall.health < 60):
-                    walls.append(wall)
+                if self.canBeDestroyed(game_state, wall):
+                    if not(wall.upgraded) and self.shouldUpgradeInstead(game_state, wall):
+                        upgradeWall.append(wall)
+                    else:
+                        walls.append(wall)
             else:
                 spawn = [[x, y]]
                 game_state.attempt_spawn(WALL, [[x, y]])
@@ -156,17 +175,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         upgradeWall.sort(key=lambda x: x.health)
         
         remove = []
-        curSP = game_state._player_resources[0]['SP']
         for turret in turrets:
-            refund = 97 * 2 * (turret.health / turret.max_health)
-            if (curSP + refund >= 2):
-                curSP += refund
+            if turret.health <= 40:
                 remove.append([turret.x, turret.y])
 
         for wall in walls:
-            refund = 97 * 2 * (wall.health / wall.max_health)
-            if (curSP + refund >= 2):
-                curSP += refund
+            if wall.health <= 40:
                 remove.append([wall.x, wall.y])
 
         if len(remove) > 0:
@@ -177,9 +191,101 @@ class AlgoStrategy(gamelib.AlgoCore):
         for turret in upgradeTur:
             game_state.attempt_upgrade([[turret.x, turret.y]])
 
+    def canBeDestroyed(self, game_state, struc):
+        opMP = game_state._player_resources[1]['MP'] + 4
+        demolisher = math.floor(opMP/3)
+        scout = opMP % 3
+        totalAttack = (demolisher * 8 * 18) + (scout * 2 * 7)
+        if struc.health < totalAttack:
+            return True
+        return False
+
+    def shouldUpgradeInstead(self, game_state, struc):
+        addHealth = 40 if struc.unit_type == 'DF' else 140
+        opMP = game_state._player_resources[1]['MP'] + 4
+        demolisher = math.floor(opMP/3)
+        scout = opMP % 3
+        totalAttack = (demolisher * 8 * 18) + (scout * 2 * 7)
+        if struc.health + addHealth < totalAttack:
+            return False
+        return True
+
     def buildNewDef(self, game_state):
-        gamelib.debug_write('LOCATIONS')
-        gamelib.debug_write(self.scored_on_locations)
+        top5 = []
+        count = 0;
+        while self.attackLoc and count < 5:
+            maxAttack = max(self.attackLoc, key=lambda key:self.attackLoc[key])
+            del self.attackLoc[maxAttack]
+            loc = maxAttack.split(',')
+            loc[0] = int(loc[0])
+            loc[1] = int(loc[1])
+            top5.append(self.getClosest(game_state, loc))
+            count += 1
+
+        curSP = game_state._player_resources[0]['SP']
+        index = [[0] * 2] * len(top5)
+        topIndex = 0
+        while curSP >= 1 and len(top5) != 0:
+            curTurret = top5[topIndex][0][index[topIndex][0]][:2]
+            curWall = top5[topIndex][1][index[topIndex][1]][:2]
+            if game_state.attempt_spawn(TURRET, [curTurret]) == 1:
+                gamelib.debug_write("SPAWNED")
+                self.turretLoc.append(curTurret)
+                curSP -= 2
+            elif game_state.attempt_upgrade([curTurret]) == 1:
+                curSP -= 4
+            if game_state.attempt_spawn(WALL, [curWall]) == 1:
+                self.wallLoc.append(curWall)
+                curSP -= 1
+            elif game_state.attempt_upgrade([curWall]) == 1:
+                curSP -= 2
+            if index[topIndex][0] + 1 == len(top5[topIndex][0]) or index[topIndex][1] + 1 == len(top5[topIndex][1]):
+                break
+            index[topIndex][0] += 1
+            index[topIndex][1] += 1 
+            topIndex = topIndex + 1 if topIndex < len(top5) - 1 else 0
+
+    def getClosest(self, game_state, loc):
+        turrets = self.turretEnd.copy()
+        walls = self.wallEnd.copy()
+
+        for i in range(1, len(self.turretEnd)):
+            if len(turrets[i]) < 3:
+                dist = self.calcDist(loc, turrets[i])
+                turrets[i].append(dist)
+            key = turrets[i]    
+            j = i-1
+            while j >= 0:
+                if len(turrets[j]) < 3:
+                    dist = self.calcDist(loc, turrets[j])
+                    turrets[j].append(dist)
+                if key[2] > turrets[j][2]:
+                    break
+                turrets[j+1] = turrets[j]
+                j -= 1
+            turrets[j+1] = key
+
+        for i in range(1, len(self.wallEnd)):
+            if len(walls[i]) < 3:
+                dist = self.calcDist(loc, walls[i])
+                walls[i].append(dist)
+            key = walls[i]    
+            j = i-1
+            while j >= 0:
+                if len(walls[j]) < 3:
+                    dist = self.calcDist(loc, walls[j])
+                    walls[j].append(dist)
+                if key[2] > walls[j][2]:
+                    break
+                walls[j+1] = walls[j]
+                j -= 1
+            walls[j+1] = key
+        
+        return [turrets, walls]
+
+            
+    def calcDist(self, loc1, loc2):
+        return math.sqrt( ((loc1[0]-loc2[0])**2)+((loc1[1]-loc2[1])**2) )
 
     def stall_with_interceptors(self, game_state):
         """
@@ -272,15 +378,24 @@ class AlgoStrategy(gamelib.AlgoCore):
         state = json.loads(turn_string)
         events = state["events"]
         breaches = events["breach"]
+        damages = events["damage"]
+
+        for damage in damages:
+            if damage[4] == 1:
+                if (damage[2] == 0) or (damage[2] == 2):
+                    key = str(damage[0][0]) + ',' + str(damage[0][1])
+                    if key in self.attackLoc:
+                        self.attackLoc[key] += 1
+                    else:
+                        self.attackLoc[key] = 1
+
         for breach in breaches:
             location = breach[0]
             unit_owner_self = True if breach[4] == 1 else False
             # When parsing the frame data directly, 
             # 1 is integer for yourself, 2 is opponent (StarterKit code uses 0, 1 as player_index instead)
             if not unit_owner_self:
-                gamelib.debug_write("Got scored on at: {}".format(location))
                 self.scored_on_locations.append(location)
-                gamelib.debug_write("All locations: {}".format(self.scored_on_locations))
 
 
 if __name__ == "__main__":
