@@ -26,6 +26,23 @@ class AlgoStrategy(gamelib.AlgoCore):
         seed = random.randrange(maxsize)
         random.seed(seed)
         gamelib.debug_write('Random seed: {}'.format(seed))
+
+    def on_game_start(self, config):
+        """ 
+        Read in config and perform any initial setup here 
+        """
+        gamelib.debug_write('Configuring your custom algo strategy...')
+        self.config = config
+        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP
+        WALL = config["unitInformation"][0]["shorthand"]
+        SUPPORT = config["unitInformation"][1]["shorthand"]
+        TURRET = config["unitInformation"][2]["shorthand"]
+        SCOUT = config["unitInformation"][3]["shorthand"]
+        DEMOLISHER = config["unitInformation"][4]["shorthand"]
+        INTERCEPTOR = config["unitInformation"][5]["shorthand"]
+        MP = 1
+        SP = 0
+        # This is a good place to do initial setup
         self.turretStart = [[3, 12], [24, 12], [7, 10], [11, 10], [16, 10], [20, 10]]
         self.wallStart = [[0, 13], [1, 13], [2, 13], [3, 13], [24, 13], [25, 13], [26, 13], [27, 13], [11, 11], [16, 11]]
         self.supStart = [[11, 9], [16, 9]]
@@ -62,24 +79,11 @@ class AlgoStrategy(gamelib.AlgoCore):
         self.turretDeath = []
         self.wallDeath = []
 
-        self.attackingUnitLoc = {}
+        self.turretRefund = []
 
-    def on_game_start(self, config):
-        """ 
-        Read in config and perform any initial setup here 
-        """
-        gamelib.debug_write('Configuring your custom algo strategy...')
-        self.config = config
-        global WALL, SUPPORT, TURRET, SCOUT, DEMOLISHER, INTERCEPTOR, MP, SP
-        WALL = config["unitInformation"][0]["shorthand"]
-        SUPPORT = config["unitInformation"][1]["shorthand"]
-        TURRET = config["unitInformation"][2]["shorthand"]
-        SCOUT = config["unitInformation"][3]["shorthand"]
-        DEMOLISHER = config["unitInformation"][4]["shorthand"]
-        INTERCEPTOR = config["unitInformation"][5]["shorthand"]
-        MP = 1
-        SP = 0
-        # This is a good place to do initial setup
+        self.attackingUnitLoc = {}
+        self.healthDmgByLoc = {}
+        self.dmgTakenLoc = {}
         
     def on_turn(self, turn_state):
         """
@@ -90,13 +94,17 @@ class AlgoStrategy(gamelib.AlgoCore):
         game engine.
         """
         game_state = gamelib.GameState(self.config, turn_state)
-        game_state.attempt_spawn(DEMOLISHER, [21, 7], 3)
+        game_state.attempt_spawn(DEMOLISHER, [21, 7], 1)
         gamelib.debug_write('Performing turn {} of your custom algo strategy'.format(game_state.turn_number))
         game_state.suppress_warnings(True)  #Comment or remove this line to enable warnings.
-
+        
         self.starter_strategy(game_state)
 
         game_state.submit_turn()
+
+        self.attackingUnitLoc = {}
+        self.healthDmgByLoc = {}
+        self.dmgTakenLoc = {}
 
     """
     NOTE: All the methods after this point are part of the sample starter-algo
@@ -132,30 +140,314 @@ class AlgoStrategy(gamelib.AlgoCore):
                 game_state.attempt_spawn(SCOUT, best_location, 1000)
 
     def build_defences(self, game_state):
-        """
-        Build basic defenses using hardcoded locations.
-        Remember to defend corners and avoid placing units in the front where enemy demolishers can attack them.
-        """
-        # Useful tool for setting up your base locations: https://www.kevinbai.design/terminal-map-maker
-        # More community tools available at: https://terminal.c1games.com/rules#Download
-        if game_state.turn_number == 1:
-            game_state.attempt_spawn(WALL, self.wallStart)
-            game_state.attempt_spawn(TURRET, self.turretStart)
-            game_state.attempt_spawn(SUPPORT, self.supStart)
-        self.rebuildDef(game_state)
+        if game_state.turn_number == 0:
+            numWall = game_state.attempt_spawn(WALL, self.wallStart)
+            numTur = game_state.attempt_spawn(TURRET, self.turretStart)
+            numSup = game_state.attempt_spawn(SUPPORT, self.supStart)
+            self.turretCur = self.turretStart[:numTur]
+            self.wallCur = self.wallStart[:numWall]
+            self.supCur = self.supStart[:numSup]
+        else:
+            self.buildRefundDef(game_state)
+            self.rebuildDef(game_state)
+            self.buildNewDef(game_state)
+            self.removeDef(game_state)
 
+    def buildRefundDef(self, game_state):
+        if self.turretRefund:
+            for turret in self.turretRefund:
+                if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
+                    self.turretCur.append(turret[:2].copy())
+                if turret[2] == 1:
+                    game_state.attempt_upgrade([turret[:2]])
+
+        self.turretRefund = []
+        
+    def removeDef(self, game_state):
+        # refund logic
+        maxDmg = 0
+        curSP = game_state._player_resources[0]["SP"]
+        if self.healthDmgByLoc:
+            maxKey = max(self.healthDmgByLoc, key=lambda key: self.healthDmgByLoc[key][2])
+            maxDmg = self.healthDmgByLoc[maxKey][2]
+
+        remove = []
+        for wall in self.wallCur:
+            curWall = game_state.game_map[wall][0]
+            if (curWall.health < curWall.max_health and curWall.health < maxDmg and maxDmg < curWall.max_health):
+                game_state.attempt_remove([wall])
+                refund = 2.7 if curWall.upgraded else 0.97
+                curSP += refund * (curWall.health / curWall.max_health)
+                remove.append(wall)
+        for wall in remove:
+            self.wallCur.remove(wall)
+        
+        for turret in self.turretCur:
+            curTurret = game_state.game_map[turret][0]
+            if (curTurret.health < curTurret.max_health and curTurret.health < maxDmg and maxDmg < curTurret.max_health):
+                refund = 5.4 if curTurret.upgraded else 1.94
+                cost = 6 if curTurret.upgraded else 2
+                if curSP + refund >= cost:
+                    curSP += refund
+                    game_state.attempt_remove([turret])
+                    self.turretRefund.append(turret.copy())
+                    if curTurret.upgraded:
+                        self.turretRefund[-1].append(1)
+                    else:
+                        self.turretRefund[-1].append(0)
+        
+        for turret in self.turretRefund:
+            self.turretCur.remove(turret[:2])
+
+    def buildNewDef(self, game_state):
+        # spawn new turrets and walls in set order
+        for turret in self.turretEnd:
+            if not(turret in self.turretCur):
+                if game_state.attempt_spawn(TURRET, [turret]) == 1:
+                    self.turretCur.append(turret)
+                else:
+                    break
+        for wall in self.wallEnd:
+            if not(wall in self.wallCur):
+                if game_state.attempt_spawn(WALL, [wall]) == 1:
+                    self.wallCur.append(wall)
+                else:
+                    break
+        
     def rebuildDef(self, game_state):
-        for x,y in self.turretDeath:
-            key = str(x) + ',' + str(y)
-            attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
-            closest = self.findClosest(game_state, attackLoc, 5)
+        # Rebuilds and fortifies structures that have died
+        if len(self.turretDeath) != 0:
+            self.rebuildTurret(game_state)
+        if len(self.wallDeath) != 0:
+            self.rebuildWall(game_state)
+
+        # spawn walls and upgrade walls and turrets to protect turrets
+        turretByDmg = []
+        for turret in self.turretCur:
+            key = str(turret[0]) + ',' + str(turret[1])
+            key2 = str(turret[0]) + ',' + str(turret[1] - 1)
+            turret2 = turret.copy()
+            if key in self.dmgTakenLoc:
+                turret2.append(self.dmgTakenLoc[key])
+            elif key2 in self.dmgTakenLoc:
+                turret2.append(self.dmgTakenLoc[key2])
+            else:
+                turret2.append(0)
+            turretByDmg.append(turret2)
+        
+        turretByDmg.sort(reverse=True, key=lambda x: x[2])
+        for turret in turretByDmg:
+            closest = self.findClosest(game_state, turret[:2], 2)
+            count = 0
+            for wall in closest[1]:
+                if count == 3:
+                    break
+                if wall[:2] in self.wallCur:
+                    count += 1
+                    continue
+                elif game_state.attempt_spawn(WALL, [wall[:2]]) == 1:
+                    self.wallCur.append(wall[:2].copy())
+                    count += 1
+            game_state.attempt_upgrade([turret[:2]])
+            count = 0
+            for wall in closest[1]:
+                if count == 3:
+                    break
+                if game_state.attempt_upgrade([wall[:2]]) == 1:
+                    count += 1
+
+    def rebuildTurret(self, game_state):
+        health = 0
+        dmgPerFrame = 1
+        remove = []
+        for turret in self.turretDeath:
+            if len(turret) == 4:
+                attackLoc = turret[2]
+                healthDmg = turret[3]
+            else:
+                key = str(turret[0]) + ',' + str(turret[1])
+                attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                key = str(attackLoc[0]) + ',' + str(attackLoc[1])
+                healthDmg = self.healthDmgByLoc[key]
+            if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
+                remove.append(turret)
+                self.turretCur.append(turret[:2].copy())
+                health = 60
+                dmgPerFrame = 6
+            elif not(turret[:2] in self.turretCur) and len(turret) != 3:
+                turret.append(attackLoc)
+                turret.append(healthDmg)
+            if game_state.attempt_upgrade([turret[:2]]) == 1:
+                health = 100
+                dmgPerFrame = 20
+            
+            opMaxDmgPerFrame = healthDmg[2]
+            opMaxHealth = (healthDmg[0] * 15) + ((healthDmg[1] / 2) * 5)
+            closest = self.findClosest(game_state, attackLoc, 3)
+            for wall in closest[1]:
+                if wall[:2] in self.wallCur:
+                    health += game_state.game_map[wall[0], wall[1]][0].health
+
+            for turret in closest[0]:
+                if turret[:2] in self.turretCur:
+                    if game_state.game_map[turret[0], turret[1]][0].upgraded:
+                        dmgPerFrame += 20
+                    else:
+                        dmgPerFrame += 6
+
+            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                for turret in closest[0]:
+                    if turret[:2] in self.turretCur:
+                        if not(game_state.game_map[turret[0], turret[1]][0].upgraded):
+                            if game_state.attempt_upgrade([turret[:2]]) == 1:
+                                dmgPerFrame += 14
+                                if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                    break
+            
+                for turret in closest[0]:
+                    if not(turret[:2] in self.turretCur):
+                        if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
+                            self.turretCur.append(turret[:2].copy())
+                            dmgPerFrame += 6
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                        if game_state.attempt_upgrade([turret[:2]]) == 1:
+                            dmgPerFrame += 14
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                
+                for wall in closest[1]:
+                    if wall[:2] in self.wallCur:
+                        if not(game_state.game_map[wall[0], wall[1]][0].upgraded):
+                            if game_state.attempt_upgrade([wall[:2]]) == 1:
+                                health += 140
+                                if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                    break
+                
+                for wall in closest[0]:
+                    if not(wall[:2] in self.wallCur):
+                        if game_state.attempt_spawn(WALL, [wall[:2]]) == 1:
+                            self.wallCur.append(wall[:2].copy())
+                            health += 60
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                        else:
+                            shouldBreak = True
+                            break
+                        if game_state.attempt_upgrade([wall[:2]]) == 1:
+                            health += 140
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+
+        for turret in remove:
+            self.turretDeath.remove(turret)
+
+    def rebuildWall(self, game_state):
+        health = 0
+        dmgPerFrame = 1
+        remove = []
+
+        for wall in self.wallDeath:
+            if len(wall) == 4:
+                attackLoc = wall[2]
+                healthDmg = wall[3]
+            else:
+                key = str(wall[0]) + ',' + str(wall[1])
+                attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                key = str(attackLoc[0]) + ',' + str(attackLoc[1])
+                healthDmg = self.healthDmgByLoc[key]
+            if game_state.attempt_spawn(WALL, [wall[:2]]) == 1:
+                self.wallCur.append(wall[:2].copy())
+                remove.append(wall)
+                health = 60
+                dmgPerFrame = 6
+            elif not(wall[:2] in self.wallCur):
+                if len(wall) != 4:
+                    wall.append(attackLoc)
+                    wall.append(healthDmg)
+            if game_state.attempt_upgrade([wall[:2]]) == 1:
+                health = 100
+                dmgPerFrame = 20
+
+            opMaxDmgPerFrame = healthDmg[2]
+            opMaxHealth = (healthDmg[0] * 15) + ((healthDmg[1] / 2) * 5)
+            closest = self.findClosest(game_state, attackLoc, 3)
+
+            for turret in closest[0]:
+                if turret[:2] in self.turretCur:
+                    if game_state.game_map[turret[0], turret[1]][0].upgraded:
+                        dmgPerFrame += 20
+                    else:
+                        dmgPerFrame += 6
+            
+            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                for turret in closest[0]:
+                    if turret[:2] in self.turretCur:
+                        if not(game_state.game_map[turret[0], turret[1]][0].upgraded):
+                            if game_state.attempt_upgrade([turret[:2]]) == 1:
+                                dmgPerFrame += 14
+                                if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                    break
+            
+                for turret in closest[0]:
+                    if not(turret[:2] in self.turretCur):
+                        if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
+                            self.turretCur.append(turret[:2].copy())
+                            dmgPerFrame += 6
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                        if game_state.attempt_upgrade([turret[:2]]) == 1:
+                            dmgPerFrame += 14
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                
+                for wall in closest[1]:
+                    if wall[:2] in self.wallCur:
+                        if not(game_state.game_map[wall[0], wall[1]][0].upgraded):
+                            if game_state.attempt_upgrade([wall[:2]]) == 1:
+                                health += 140
+                                if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                    break
+                
+                for wall in closest[0]:
+                    if not(wall[:2] in self.wallCur):
+                        if game_state.attempt_spawn(WALL, [wall[:2]]) == 1:
+                            self.wallCur.append(wall[:2].copy())
+                            health += 60
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+                        else:
+                            shouldBreak = True
+                            break
+                        if game_state.attempt_upgrade([wall[:2]]) == 1:
+                            health += 140
+                            if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
+                                        break
+    
+        for wall in remove:
+            self.wallDeath.remove(wall)
+
+    def calcDist(self, loc1, loc2):
+        return math.sqrt(((loc1[0]-loc2[0])**2)+((loc1[1]-loc2[1])**2))
 
     def findClosest(self, game_state, loc, radius):
         turrets = []
         walls = []
 
-        for 
+        for turret in self.turretEnd:
+            dist = self.calcDist(turret, loc)
+            if dist <= radius:
+                turrets.append([turret[0], turret[1], dist])
+        
+        for wall in self.wallEnd:
+            dist = self.calcDist(wall, loc)
+            if dist <= radius:
+                walls.append([wall[0], wall[1], dist])
 
+        turrets.sort(key=lambda x: x[2])
+        walls.sort(key=lambda x: x[2])
+
+        return [turrets, walls]
 
 
 
@@ -182,28 +474,6 @@ class AlgoStrategy(gamelib.AlgoCore):
             We don't have to remove the location since multiple mobile 
             units can occupy the same space.
             """
-
-    def demolisher_line_strategy(self, game_state):
-        """
-        Build a line of the cheapest stationary unit so our demolisher can attack from long range.
-        """
-        # First let's figure out the cheapest unit
-        # We could just check the game rules, but this demonstrates how to use the GameUnit class
-        stationary_units = [WALL, TURRET, SUPPORT]
-        cheapest_unit = WALL
-        for unit in stationary_units:
-            unit_class = gamelib.GameUnit(unit, game_state.config)
-            if unit_class.cost[game_state.MP] < gamelib.GameUnit(cheapest_unit, game_state.config).cost[game_state.MP]:
-                cheapest_unit = unit
-
-        # Now let's build out a line of stationary units. This will prevent our demolisher from running into the enemy base.
-        # Instead they will stay at the perfect distance to attack the front two rows of the enemy base.
-        for x in range(27, 5, -1):
-            game_state.attempt_spawn(cheapest_unit, [x, 11])
-
-        # Now spawn demolishers next to the line
-        # By asking attempt_spawn to spawn 1000 units, it will essentially spawn as many as we have resources for
-        game_state.attempt_spawn(DEMOLISHER, [24, 10], 1000)
 
     def least_damage_spawn_location(self, game_state, location_options):
         """
@@ -260,16 +530,39 @@ class AlgoStrategy(gamelib.AlgoCore):
                     self.attackingUnitLoc[key].append(attack[0])
                 else:
                     self.attackingUnitLoc[key] = [attack[0]]
+                if key in self.dmgTakenLoc:
+                    self.dmgTakenLoc[key] += attack[2]
+                else:
+                     self.dmgTakenLoc[key] = attack[2]
+
+                key = str(attack[0][0]) + ',' + str(attack[0][1])
+                if key in self.healthDmgByLoc:
+                    self.healthDmgByLoc[key][2] += attack[2]
+                    if attack[3] == 3:
+                        self.healthDmgByLoc[key][0] += 1
+                    elif attack[3] == 4:
+                        self.healthDmgByLoc[key][1] += 1
+                else:
+                    self.healthDmgByLoc[key] = [0, 0, attack[2]]
+                    if attack[3] == 3:
+                        self.healthDmgByLoc[key][0] += 1
+                    elif attack[3] == 4:
+                        self.healthDmgByLoc[key][1] += 1
 
         for death in deaths:
-            if death[3] == 1 and not(death[4]):
+            if death[3] == 1:
                 if death[1] == 0:
-                    self.wallDeath.append(death[0])
+                    if not death[4]:
+                        gamelib.debug_write("DEATH")
+                        gamelib.debug_write(death)
+                        self.wallDeath.append(death[0])
+                    if death[0] in self.wallCur:    
+                        self.wallCur.remove(death[0])
                 if death[1] == 2:
-                    self.turretDeath.append(death[0])
-
-
-
+                    if not death[4]:
+                        self.turretDeath.append(death[0])
+                    if death[0] in self.turretCur:
+                        self.turretCur.remove(death[0])
 
 if __name__ == "__main__":
     algo = AlgoStrategy()
