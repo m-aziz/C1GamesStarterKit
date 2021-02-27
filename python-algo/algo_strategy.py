@@ -156,6 +156,8 @@ class AlgoStrategy(gamelib.AlgoCore):
     def buildRefundDef(self, game_state):
         if self.turretRefund:
             for turret in self.turretRefund:
+                if turret[:2] in self.turretDeath:
+                    continue
                 if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
                     self.turretCur.append(turret[:2].copy())
                 if turret[2] == 1:
@@ -277,6 +279,8 @@ class AlgoStrategy(gamelib.AlgoCore):
             elif not(turret[:2] in self.turretCur) and len(turret) != 3:
                 turret.append(attackLoc)
                 turret.append(healthDmg)
+            else:
+                remove.append(turret)
             if game_state.attempt_upgrade([turret[:2]]) == 1:
                 health = 100
                 dmgPerFrame = 20
@@ -358,10 +362,11 @@ class AlgoStrategy(gamelib.AlgoCore):
                 remove.append(wall)
                 health = 60
                 dmgPerFrame = 6
-            elif not(wall[:2] in self.wallCur):
-                if len(wall) != 4:
-                    wall.append(attackLoc)
-                    wall.append(healthDmg)
+            elif not(wall[:2] in self.wallCur) and len(wall) != 4:
+                wall.append(attackLoc)
+                wall.append(healthDmg)
+            else:
+                remove.append(wall)
             if game_state.attempt_upgrade([wall[:2]]) == 1:
                 health = 100
                 dmgPerFrame = 20
@@ -520,8 +525,6 @@ class AlgoStrategy(gamelib.AlgoCore):
 
         for attack in attacks:
             if attack[6] == 2:
-                gamelib.debug_write("Attack")
-                gamelib.debug_write(attack)
                 key = str(attack[1][0]) + ',' + str(attack[1][1])
                 if key in self.attackingUnitLoc:
                     self.attackingUnitLoc[key].append(attack[0])
@@ -564,13 +567,13 @@ class AlgoStrategy(gamelib.AlgoCore):
                     self.healthDmgByLoc[key][2] += selfDestruct[2]
                     if selfDestruct[3] == 3:
                         self.healthDmgByLoc[key][0] += 1
-                    elif attack[3] == 4:
+                    elif selfDestruct[3] == 4:
                         self.healthDmgByLoc[key][1] += 1
                 else:
                     self.healthDmgByLoc[key] = [0, 0, selfDestruct[2]]
-                    if attack[3] == 3:
+                    if selfDestruct[3] == 3:
                         self.healthDmgByLoc[key][0] += 1
-                    elif attack[3] == 4:
+                    elif selfDestruct[3] == 4:
                         self.healthDmgByLoc[key][1] += 1
 
 
@@ -578,8 +581,6 @@ class AlgoStrategy(gamelib.AlgoCore):
             if death[3] == 1:
                 if death[1] == 0:
                     if not death[4]:
-                        gamelib.debug_write("Death")
-                        gamelib.debug_write(death)
                         self.wallDeath.append(death[0])
                     if death[0] in self.wallCur:    
                         self.wallCur.remove(death[0])
