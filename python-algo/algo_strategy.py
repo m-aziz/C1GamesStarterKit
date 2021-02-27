@@ -331,9 +331,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                             health += 60
                             if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
                                         break
-                        else:
-                            shouldBreak = True
-                            break
                         if game_state.attempt_upgrade([wall[:2]]) == 1:
                             health += 140
                             if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
@@ -416,9 +413,6 @@ class AlgoStrategy(gamelib.AlgoCore):
                             health += 60
                             if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
                                         break
-                        else:
-                            shouldBreak = True
-                            break
                         if game_state.attempt_upgrade([wall[:2]]) == 1:
                             health += 140
                             if (health/opMaxDmgPerFrame) < (opMaxHealth/dmgPerFrame):
@@ -522,9 +516,12 @@ class AlgoStrategy(gamelib.AlgoCore):
         events = state["events"]
         deaths = events["death"]
         attacks = events["attack"]
+        selfDestructs = events["selfDestruct"]
 
         for attack in attacks:
             if attack[6] == 2:
+                gamelib.debug_write("Attack")
+                gamelib.debug_write(attack)
                 key = str(attack[1][0]) + ',' + str(attack[1][1])
                 if key in self.attackingUnitLoc:
                     self.attackingUnitLoc[key].append(attack[0])
@@ -549,11 +546,39 @@ class AlgoStrategy(gamelib.AlgoCore):
                     elif attack[3] == 4:
                         self.healthDmgByLoc[key][1] += 1
 
+        for selfDestruct in selfDestructs:
+            if selfDestruct[5] == 2:
+                for loc in selfDestruct[1]:
+                    key = str(loc[0]) + ',' + str(loc[1])
+                    if key in self.attackingUnitLoc:
+                        self.attackingUnitLoc[key].append(selfDestruct[0])
+                    else:
+                        self.attackingUnitLoc[key] = [selfDestruct[0]]
+                    if key in self.dmgTakenLoc:
+                        self.dmgTakenLoc[key] += selfDestruct[2]
+                    else:
+                        self.dmgTakenLoc[key] = selfDestruct[2]
+
+                key = str(selfDestruct[0][0]) + ',' + str(selfDestruct[0][1])
+                if key in self.healthDmgByLoc:
+                    self.healthDmgByLoc[key][2] += selfDestruct[2]
+                    if selfDestruct[3] == 3:
+                        self.healthDmgByLoc[key][0] += 1
+                    elif attack[3] == 4:
+                        self.healthDmgByLoc[key][1] += 1
+                else:
+                    self.healthDmgByLoc[key] = [0, 0, selfDestruct[2]]
+                    if attack[3] == 3:
+                        self.healthDmgByLoc[key][0] += 1
+                    elif attack[3] == 4:
+                        self.healthDmgByLoc[key][1] += 1
+
+
         for death in deaths:
             if death[3] == 1:
                 if death[1] == 0:
                     if not death[4]:
-                        gamelib.debug_write("DEATH")
+                        gamelib.debug_write("Death")
                         gamelib.debug_write(death)
                         self.wallDeath.append(death[0])
                     if death[0] in self.wallCur:    
