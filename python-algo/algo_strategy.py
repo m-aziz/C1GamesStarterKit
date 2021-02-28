@@ -256,9 +256,18 @@ class AlgoStrategy(gamelib.AlgoCore):
                 healthDmg = turret[3]
             else:
                 key = str(turret[0]) + ',' + str(turret[1])
-                attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                if key in self.attackingUnitLoc:
+                    attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                else:
+                    attackLoc = turret
                 key = str(attackLoc[0]) + ',' + str(attackLoc[1])
-                healthDmg = self.healthDmgByLoc[key]
+                if key in self.attackingUnitLoc:
+                    healthDmg = self.healthDmgByLoc[key]
+                else:
+                    if self.healthDmgByLoc:
+                        healthDmg = self.healthDmgByLoc[next(iter(self.healthDmgByLoc))]
+                    else:
+                        healthDmg = [1, 2, 10]
             if game_state.attempt_spawn(TURRET, [turret[:2]]) == 1:
                 remove.append(turret)
                 self.turretCur.append(turret[:2].copy())
@@ -342,9 +351,18 @@ class AlgoStrategy(gamelib.AlgoCore):
                 healthDmg = wall[3]
             else:
                 key = str(wall[0]) + ',' + str(wall[1])
-                attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                if key in self.attackingUnitLoc:
+                    attackLoc = max(self.attackingUnitLoc[key], key=self.attackingUnitLoc[key].count)
+                else:
+                    attackLoc = turret
                 key = str(attackLoc[0]) + ',' + str(attackLoc[1])
-                healthDmg = self.healthDmgByLoc[key]
+                if key in self.attackingUnitLoc:
+                    healthDmg = self.healthDmgByLoc[key]
+                else:
+                    if self.healthDmgByLoc:
+                        healthDmg = self.healthDmgByLoc[next(iter(self.healthDmgByLoc))]
+                    else:
+                        healthDmg = [1, 2, 10]
             if game_state.attempt_spawn(WALL, [wall[:2]]) == 1:
                 self.wallCur.append(wall[:2].copy())
                 remove.append(wall)
